@@ -1,0 +1,119 @@
+services:
+
+  # ─── Aplikacje ──────────────────────────────────────────────────
+
+  vote:
+    build:
+      context: ./vote
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    networks:
+      - front-tier
+      - back-tier
+
+  result:
+    build:
+      context: ./result
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:80"
+    networks:
+      - front-tier
+      - back-tier
+
+  worker:
+    build:
+      context: ./worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - back-tier
+
+  # ─── Bazy Danych ────────────────────────────────────────────────────────
+
+  redis:
+    image: redis:alpine
+    volumes:
+      - "./healthchecks:/healthchecks"
+    healthcheck:
+      test: /healthchecks/redis.sh
+      interval: "5s"
+    networks:
+      - back-tier
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+    volumes:
+      - "db-data:/var/lib/postgresql/data"
+      - "./healthchecks:/healthchecks"
+    healthcheck:
+      test: /healthchecks/postgres.sh
+      interval: "5s"
+    networks:
+      - back-tier
+
+  waf-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "super_secret_password_here"
+      POSTGRES_DB: "waf_logs"
+    volumes:
+      - "waf-db-data:/var/lib/postgresql/data"
+      - "./waf/schema.sql:/docker-entrypoint-initdb.d/schema.sql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: "5s"
+      timeout: "5s"
+      retries: 5
+    networks:
+      - front-tier
+
+  waf-redis:
+    image: redis:alpine
+    networks:
+      - front-tier
+
+  # ─── WAF + Proxy ──────────────────────────────────────────────────
+  proxy:
+    build: ./proxy/
+    depends_on:
+      - vote
+      - result
+    networks:
+      - front-tier
+
+  waf:
+    build: ./waf/
+    ports:
+      - "9090:9090"
+    depends_on:
+      waf-db:
+        condition: service_healthy
+      waf-redis:
+        condition: service_started
+      proxy:
+        condition: service_started
+    networks:
+      - front-tier
+
+
+volumes:
+  db-data:
+  grafana-data:
+  waf-db-data:
+
+networks:
+  front-tier:
+  back-tier:

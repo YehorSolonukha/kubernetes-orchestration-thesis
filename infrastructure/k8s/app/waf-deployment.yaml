@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waf
+  labels:
+    app: waf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: waf
+  template:
+    metadata:
+      labels:
+        app: waf
+    spec:
+      containers:
+      - name: waf
+        image: yehor542/waf:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9090
+        env:
+        - name: WAF_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: waf-db-cluster-app
+              key: username
+        - name: WAF_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: waf-db-cluster-app
+              key: password
+        - name: WAF_DB_URL
+          value: "postgres://$(WAF_DB_USER):$(WAF_DB_PASSWORD)@waf-db-cluster-rw:5432/waf_logs"
+        - name: WAF_REDIS_URL
+          value: "redis://waf-redis-ha-master:6379"
+        - name: PROXY_URL
+          value: "http://proxy:9091"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
